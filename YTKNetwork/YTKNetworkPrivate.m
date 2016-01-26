@@ -35,46 +35,69 @@ void YTKLog(NSString *format, ...) {
 
 @implementation YTKNetworkPrivate
 
-+ (BOOL)checkJson:(id)json withValidator:(id)validatorJson {
++ (BOOL)checkJson:(id)json withValidator:(id)validatorJson
+{
+    // 字典
     if ([json isKindOfClass:[NSDictionary class]] &&
-        [validatorJson isKindOfClass:[NSDictionary class]]) {
+        [validatorJson isKindOfClass:[NSDictionary class]])
+    {
         NSDictionary * dict = json;
         NSDictionary * validator = validatorJson;
         BOOL result = YES;
         NSEnumerator * enumerator = [validator keyEnumerator];
         NSString * key;
-        while ((key = [enumerator nextObject]) != nil) {
+        while ((key = [enumerator nextObject]) != nil)
+        {
             id value = dict[key];
             id format = validator[key];
             if ([value isKindOfClass:[NSDictionary class]]
-                || [value isKindOfClass:[NSArray class]]) {
+                || [value isKindOfClass:[NSArray class]])
+            {
                 return [self checkJson:value withValidator:format];
-            } else {
+            }
+            else
+            {
                 if ([value isKindOfClass:format] == NO &&
-                    [value isKindOfClass:[NSNull class]] == NO) {
+                    [value isKindOfClass:[NSNull class]] == NO)
+                {
                     result = NO;
                     break;
                 }
             }
         }
         return result;
-    } else if ([json isKindOfClass:[NSArray class]] &&
-               [validatorJson isKindOfClass:[NSArray class]]) {
+    }
+    
+    // 数组
+    else if ([json isKindOfClass:[NSArray class]] &&
+               [validatorJson isKindOfClass:[NSArray class]])
+    {
         NSArray * validatorArray = (NSArray *)validatorJson;
-        if (validatorArray.count > 0) {
+        if (validatorArray.count > 0)
+        {
             NSArray * array = json;
+            
+            // 数组对象只需要提供一个对象实例即可
             NSDictionary * validator = validatorJson[0];
-            for (id item in array) {
+            for (id item in array)
+            {
                 BOOL result = [self checkJson:item withValidator:validator];
-                if (!result) {
+                if (!result)
+                {
                     return NO;
                 }
             }
         }
         return YES;
-    } else if ([json isKindOfClass:validatorJson]) {
+    }
+    
+    // 其它对象
+    else if ([json isKindOfClass:validatorJson])
+    {
         return YES;
-    } else {
+    }
+    else
+    {
         return NO;
     }
 }
@@ -99,6 +122,8 @@ void YTKLog(NSString *format, ...) {
         if ([originUrlString rangeOfString:@"?"].location != NSNotFound) {
             filteredUrl = [filteredUrl stringByAppendingString:paraUrlString];
         } else {
+            // 为什么会从1开始？
+            // 因为返回的字符串第一个字符为& 是不需要的
             filteredUrl = [filteredUrl stringByAppendingFormat:@"?%@", [paraUrlString substringFromIndex:1]];
         }
         return filteredUrl;

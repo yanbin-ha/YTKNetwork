@@ -55,6 +55,8 @@
 - (NSString *)buildRequestUrl:(YTKBaseRequest *)request {
     NSString *detailUrl = [request requestUrl];
     if ([detailUrl hasPrefix:@"http"]) {
+        // 如果request自己提供了完整的路径，就用request
+        // 提供的路径
         return detailUrl;
     }
     // filter url

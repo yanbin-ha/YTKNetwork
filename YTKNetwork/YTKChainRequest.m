@@ -87,6 +87,7 @@
     if (_nextRequestIndex < [_requestArray count]) {
         YTKBaseRequest *request = _requestArray[_nextRequestIndex];
         _nextRequestIndex++;
+        // 一定要设置代理
         request.delegate = self;
         [request start];
         return YES;
