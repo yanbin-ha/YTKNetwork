@@ -76,7 +76,7 @@
     NSString *pathOfLibrary = [NSSearchPathForDirectoriesInDomains(NSLibraryDirectory, NSUserDomainMask, YES) objectAtIndex:0];
     NSString *path = [pathOfLibrary stringByAppendingPathComponent:@"LazyRequestCache"];
 
-    // filter cache base path
+    // 通过config对象，调整cache的存储路径
     NSArray *filters = [[YTKNetworkConfig sharedInstance] cacheDirPathFilters];
     if (filters.count > 0) {
         for (id<YTKCacheDirPathFilterProtocol> f in filters) {
@@ -84,6 +84,8 @@
         }
     }
 
+    // 1，确保文件夹路径存在
+    // 2，确保路径是一个文件夹，如果有同名的文件，删除
     [self checkDirectory:path];
     return path;
 }
@@ -100,6 +102,8 @@
 }
 
 - (NSString *)cacheFilePath {
+    // cache文件的名字是一个md5字符串
+    // 由http方法名(POST,GET...)，主url，全路径url，参数，app版本，等生成
     NSString *cacheFileName = [self cacheFileName];
     NSString *path = [self cacheBasePath];
     path = [path stringByAppendingPathComponent:cacheFileName];
@@ -139,49 +143,63 @@
 }
 
 - (void)start {
+    // 如果忽略cache，那么直接进行网络加载
     if (self.ignoreCache) {
         [super start];
         return;
     }
-    // check cache version
+    // 从本地读取cache的版本
     long long cacheVersionFileContent = [self cacheVersionFileContent];
+    // 查看本地缓存和需要的缓存版本号是否一致
     if (cacheVersionFileContent != [self cacheVersion]) {
         [super start];
         return;
     }
 
-    // check cache time
+    // 如果没有设置cache的有效时间，那么认为不启用本地缓存
     if ([self cacheTimeInSeconds] < 0) {
         [super start];
         return;
     }
 
-    // check cache existance
+    // 获得cache文件的存储路径
     NSString *path = [self cacheFilePath];
     NSFileManager *fileManager = [NSFileManager defaultManager];
+    // 如果cache文件不存在，那么就从网络上加载
     if (![fileManager fileExistsAtPath:path isDirectory:nil]) {
         [super start];
         return;
     }
 
-    // check cache time
+    /* 获取文件从上次修改到现在的时间 */
     int seconds = [self cacheFileDuration:path];
+    /**
+     *  1，获取不到
+     *  2，相距时间超过了有效期
+     *  都要从网络重新获取数据
+     **/
     if (seconds < 0 || seconds > [self cacheTimeInSeconds]) {
         [super start];
         return;
     }
 
-    // load cache
+    /**
+     *  到这里说明，cache文件存在，并且没有过期
+     *  那么要做的就是从本地cache文件中加载数据
+     **/
     _cacheJson = [NSKeyedUnarchiver unarchiveObjectWithFile:path];
     if (_cacheJson == nil) {
         [super start];
         return;
     }
 
+    /* 标识当前的数据是从本地cache当中获取到的 */
     _dataFromCache = YES;
-//    self.animatingText = nil;
-//    self.animatingView = nil;
+    
+    /* 调用hook代码通知请求即将完成 */
     [self requestCompleteFilter];
+    
+    /* 告诉该请求的代理对象，请求已经完成 */
     YTKRequest *strongSelf = self;
     [strongSelf.delegate requestFinished:strongSelf];
     if (strongSelf.successCompletionBlock) {
@@ -233,12 +251,21 @@
 
 - (void)requestCompleteFilter {
     [super requestCompleteFilter];
+    
+    /* 将由服务器返回的json对象保存到本地 */
     [self saveJsonResponseToCacheFile:[super responseJSONObject]];
 }
 
-// 手动将其他请求的JsonResponse写入该请求的缓存
-// 比如AddNoteApi, UpdateNoteApi都会获得Note，且其与GetNoteApi共享缓存，可以通过这个接口写入GetNoteApi缓存
+/**
+ *  手动将其他请求的JsonResponse写入该请求的缓存
+ *  比如AddNoteApi, UpdateNoteApi都会获得Note，且其与GetNoteApi共享缓存，可以通过这个接口写入GetNoteApi缓存
+ **/
 - (void)saveJsonResponseToCacheFile:(id)jsonResponse {
+    /**
+     *  1，用户设置了cache有效时间
+     *  2，该请求不是从本地cache获取的
+     *  只有这样的回应包才需要缓存
+     **/
     if ([self cacheTimeInSeconds] > 0 && ![self isDataFromCache]) {
         NSDictionary *json = jsonResponse;
         if (json != nil) {

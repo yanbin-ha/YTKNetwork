@@ -103,6 +103,8 @@
 /// append self to request queue
 - (void)start {
     [self toggleAccessoriesStartCallBack];
+    
+    /* 开始使用afnetworking发起请求 */
     [[YTKNetworkAgent sharedInstance] addRequest:self];
 }
 

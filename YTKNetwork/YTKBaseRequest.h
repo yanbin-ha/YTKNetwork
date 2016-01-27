@@ -34,7 +34,7 @@ typedef NS_ENUM(NSInteger , YTKRequestMethod) {
 };
 
 typedef NS_ENUM(NSInteger , YTKRequestSerializerType) {
-    YTKRequestSerializerTypeHTTP = 0,
+    YTKRequestSerializerTypeHTTP = 0, // xml?
     YTKRequestSerializerTypeJSON,
 };
 
@@ -43,9 +43,12 @@ typedef void (^AFDownloadProgressBlock)(AFDownloadRequestOperation *operation, N
 
 @class YTKBaseRequest;
 
+// 请求的代理毁掉协议
 @protocol YTKRequestDelegate <NSObject>
 
+// 请求结束
 - (void)requestFinished:(YTKBaseRequest *)request;
+// 请求失败
 - (void)requestFailed:(YTKBaseRequest *)request;
 
 @optional
@@ -53,13 +56,13 @@ typedef void (^AFDownloadProgressBlock)(AFDownloadRequestOperation *operation, N
 
 @end
 
+// 用于对网络请求进行hook
 @protocol YTKRequestAccessory <NSObject>
-
 @optional
-
+// 将要发起网络请求时调用
 - (void)requestWillStart:(id)request;
+// 网络请求结束时调用
 - (void)requestDidStop:(id)request;
-
 @end
 
 @interface YTKBaseRequest : NSObject
@@ -111,7 +114,7 @@ typedef void (^AFDownloadProgressBlock)(AFDownloadRequestOperation *operation, N
 // Request Accessory，可以hook Request的start和stop
 - (void)addAccessory:(id<YTKRequestAccessory>)accessory;
 
-/// 以下方法由子类继承来覆盖默认值
+#pragma mark - 以下方法由子类继承来覆盖默认值
 
 // 请求成功的回调
 - (void)requestCompleteFilter;

@@ -105,9 +105,13 @@ void YTKLog(NSString *format, ...) {
 + (NSString *)urlParametersStringFromParameters:(NSDictionary *)parameters {
     NSMutableString *urlParametersString = [[NSMutableString alloc] initWithString:@""];
     if (parameters && parameters.count > 0) {
+        [parameters enumerateKeysAndObjectsUsingBlock:^(id  _Nonnull key, id  _Nonnull obj, BOOL * _Nonnull stop) {
+            
+        }];
         for (NSString *key in parameters) {
             NSString *value = parameters[key];
             value = [NSString stringWithFormat:@"%@",value];
+            /* 将value编码成url格式 */
             value = [self urlEncode:value];
             [urlParametersString appendFormat:@"&%@=%@", key, value];
         }

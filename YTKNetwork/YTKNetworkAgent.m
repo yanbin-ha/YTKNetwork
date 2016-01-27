@@ -45,37 +45,62 @@
     self = [super init];
     if (self) {
         _config = [YTKNetworkConfig sharedInstance];
+        
         _manager = [AFHTTPRequestOperationManager manager];
-        _requestsRecord = [NSMutableDictionary dictionary];
         _manager.operationQueue.maxConcurrentOperationCount = 4;
+        
+        _requestsRecord = [NSMutableDictionary dictionary];
+
     }
     return self;
 }
 
-- (NSString *)buildRequestUrl:(YTKBaseRequest *)request {
+- (NSString *)buildRequestUrl:(YTKBaseRequest *)request
+{
+    /* 先看一下request有没有自己提供的url */
     NSString *detailUrl = [request requestUrl];
-    if ([detailUrl hasPrefix:@"http"]) {
+    if ( [detailUrl hasPrefix:@"http"] || [detailUrl hasPrefix:@"https"])
+    {
         // 如果request自己提供了完整的路径，就用request
         // 提供的路径
         return detailUrl;
     }
-    // filter url
+    /* 对url进行处理 */
     NSArray *filters = [_config urlFilters];
-    for (id<YTKUrlFilterProtocol> f in filters) {
+    for (id<YTKUrlFilterProtocol> f in filters)
+    {
         detailUrl = [f filterUrl:detailUrl withRequest:request];
     }
 
     NSString *baseUrl;
-    if ([request useCDN]) {
-        if ([request cdnUrl].length > 0) {
+    /* 用户使用cdnurl */
+    if ( [request useCDN] )
+    {
+        /**
+         *  每个请求可以自定义cdn的url
+         *  也可以使用全局的cdnurl配置
+         **/
+        if ([request cdnUrl].length > 0)
+        {
             baseUrl = [request cdnUrl];
-        } else {
+        }
+        else
+        {
             baseUrl = [_config cdnUrl];
         }
-    } else {
-        if ([request baseUrl].length > 0) {
+    }
+    else
+    {
+        /**
+         *  每个请求可以自定义base的url
+         *  也可以使用全局的base url配置
+         **/
+        if ([request baseUrl].length > 0)
+        {
             baseUrl = [request baseUrl];
-        } else {
+        }
+        else
+        {
             baseUrl = [_config baseUrl];
         }
     }
@@ -83,27 +108,42 @@
 }
 
 - (void)addRequest:(YTKBaseRequest *)request {
+    /* 获取请求使用的方法 */
     YTKRequestMethod method = [request requestMethod];
+    
+    /* 获取请求对应的url地址 */
     NSString *url = [self buildRequestUrl:request];
+    
+    /* 获取该请求的参数 */
     id param = request.requestArgument;
+    
+    /**
+     *  获得用户构造数据的block 
+     *  该功能一般用于上传文件到服务器
+     **/
     AFConstructingBlock constructingBlock = [request constructingBodyBlock];
 
+    /* 设定http请求数据的序列化类型 */
     if (request.requestSerializerType == YTKRequestSerializerTypeHTTP) {
         _manager.requestSerializer = [AFHTTPRequestSerializer serializer];
     } else if (request.requestSerializerType == YTKRequestSerializerTypeJSON) {
         _manager.requestSerializer = [AFJSONRequestSerializer serializer];
     }
 
-    // if api need server username and password
+    /* 设置给服务器传的 username和password */
     NSArray *authorizationHeaderFieldArray = [request requestAuthorizationHeaderFieldArray];
     if (authorizationHeaderFieldArray != nil) {
         [_manager.requestSerializer setAuthorizationHeaderFieldWithUsername:(NSString *)authorizationHeaderFieldArray.firstObject
                                                                    password:(NSString *)authorizationHeaderFieldArray.lastObject];
     }
 
-    // if api build custom url request
+    /** 
+     *  为用户自定义request请求留下接口
+     *  所以先询问一下是否需要自己构建请求
+     **/
     NSURLRequest *customUrlRequest= [request buildCustomUrlRequest];
     if (customUrlRequest) {
+        
         AFHTTPRequestOperation *operation = [[AFHTTPRequestOperation alloc] initWithRequest:customUrlRequest];
         [operation setCompletionBlockWithSuccess:^(AFHTTPRequestOperation *operation, id responseObject) {
             [self handleRequestResult:operation];
@@ -112,12 +152,12 @@
         }];
         request.requestOperation = operation;
         [_manager.operationQueue addOperation:operation];
+        
     } else {
         if (method == YTKRequestMethodGet) {
+            /* 处理断点续传的文件下载 */
             if (request.resumableDownloadPath) {
-                // add parameters to URL;
                 NSString *filteredUrl = [YTKNetworkPrivate urlStringWithOriginUrlString:url appendParameters:param];
-
                 NSURLRequest *requestUrl = [NSURLRequest requestWithURL:[NSURL URLWithString:filteredUrl]];
                 AFDownloadRequestOperation *operation = [[AFDownloadRequestOperation alloc] initWithRequest:requestUrl
                                                                                                  targetPath:request.resumableDownloadPath shouldResume:YES];
@@ -130,6 +170,7 @@
                 request.requestOperation = operation;
                 [_manager.operationQueue addOperation:operation];
             } else {
+            /* 处理普通的get请求 */
                 request.requestOperation = [_manager GET:url parameters:param success:^(AFHTTPRequestOperation *operation, id responseObject) {
                     [self handleRequestResult:operation];
                 }                                failure:^(AFHTTPRequestOperation *operation, NSError *error) {
@@ -198,6 +239,10 @@
     if (!result) {
         return result;
     }
+    /** 
+     *  以下为验证返回的json的结构 
+     *  可以根据需要进行去除
+     **/
     id validator = [request jsonValidator];
     if (validator != nil) {
         id json = [request responseJSONObject];
@@ -206,32 +251,55 @@
     return result;
 }
 
+/**
+ *  当网络请求结束的时候处理得到的数据
+ **/
 - (void)handleRequestResult:(AFHTTPRequestOperation *)operation {
+    /* 在容器中找到对应的请求对象 */
     NSString *key = [self requestHashKey:operation];
     YTKBaseRequest *request = _requestsRecord[key];
-    YTKLog(@"Finished Request: %@", NSStringFromClass([request class]));
-    if (request) {
-        BOOL succeed = [self checkResult:request];
-        if (succeed) {
-            [request requestCompleteFilter];
-            if (request.delegate != nil) {
-                [request.delegate requestFinished:request];
-            }
-            if (request.successCompletionBlock) {
-                request.successCompletionBlock(request);
-            }
-        } else {
-            YTKLog(@"Request %@ failed, status code = %ld",
-                     NSStringFromClass([request class]), (long)request.responseStatusCode);
-            [request requestFailedFilter];
-            if (request.delegate != nil) {
-                [request.delegate requestFailed:request];
-            }
-            if (request.failureCompletionBlock) {
-                request.failureCompletionBlock(request);
-            }
+    
+    /* 如果找不到请求对象那么什么也不做 */
+    if ( !request )
+    {
+        YTKLog(@"Finished Request: %@", NSStringFromClass([request class]));
+        return;
+    }
+
+    /* 请求成功 */
+    BOOL succeed = [self checkResult:request];
+    if (succeed)
+    {
+        /* 通知网络请求的hook对象，请求成功了 */
+        [request requestCompleteFilter];
+        
+        /* 通知网络请求的发起人，请求已经完成 */
+        if (request.delegate != nil)
+        {
+            [request.delegate requestFinished:request];
+        }
+        if (request.successCompletionBlock)
+        {
+            request.successCompletionBlock(request);
         }
     }
+    /* 请求失败 */
+    else
+    {
+        YTKLog(@"Request %@ failed, status code = %ld",
+                 NSStringFromClass([request class]), (long)request.responseStatusCode);
+        [request requestFailedFilter];
+        if (request.delegate != nil)
+        {
+            [request.delegate requestFailed:request];
+        }
+        if (request.failureCompletionBlock)
+        {
+            request.failureCompletionBlock(request);
+        }
+    }
+    
+    /* 将处理过的网络请求对象从容器当中删除 */
     [self removeOperation:operation];
     [request clearCompletionBlock];
 }
